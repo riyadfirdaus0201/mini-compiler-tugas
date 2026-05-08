@@ -19,58 +19,30 @@ t2 = b * c
 t3 = t1 + t2
 ```
 
----
-# 1. Mengapa `power()` harus dipanggil di dalam `term()`, bukan sebaliknya?
+**1. Mengapa `power()` dipanggil di dalam `term()`, bukan sebaliknya?**
 
-Ini berkaitan langsung dengan **Operator Precedence (Hierarki Operator)**.
-
-Dalam matematika, urutan prioritas dari terendah ke tertinggi adalah:
+Ini berkaitan dengan *operator precedence*. Dalam parsing rekursif descent, fungsi yang dipanggil *lebih dalam* mengikat lebih ketat (prioritas lebih tinggi). Hirarki panggilan adalah:
 
 ```
-+ dan -   (paling rendah)
-* dan /
-^         (paling tinggi)
-( )  dan  angka/variabel
+expr() → term() → power() → factor()
 ```
 
-Struktur fungsi dalam parser mencerminkan hierarki ini secara terbalik — fungsi yang menangani prioritas lebih rendah memanggil fungsi yang menangani prioritas lebih tinggi:
+Karena `term()` memanggil `power()`, artinya `^` akan dievaluasi *lebih dulu* dari `*` dan `/`. Jika dibalik (`power()` memanggil `term()`), maka `*` dan `/` justru akan punya prioritas lebih tinggi dari `^`, yang bertentangan dengan aturan matematika.
 
-```
-expr()   → memanggil → term()
-term()   → memanggil → power()
-power()  → memanggil → factor()
-```
+**2. Apa yang terjadi jika variabel `z` tidak ada di `symbol_table`?**
 
-Jika `term()` tidak memanggil `power()` melainkan sebaliknya, maka ekspresi seperti `a ^ 2 * 3` akan diparse sebagai `a ^ (2 * 3)` — salah. Dengan struktur yang benar, parser akan menghasilkan `(a ^ 2) * 3` sesuai aturan matematika.
-
----
-
-# 2. Apa yang terjadi jika variabel `z` digunakan tapi tidak ada di `symbol_table`?
-
-Pada fase **Analisis Semantik**, fungsi `factor()` mengecek apakah variabel terdaftar di `self._env`:
-
+Fase *Semantic Analysis* akan mendeteksi bahwa `z` tidak terdefinisi. Pada kode ini, pemeriksaan dilakukan di fungsi `factor()`:
 ```python
-elif token and token.isalpha():
-    if token not in self._env:
-        raise ParserError(f"Semantic Error: Undefined variable '{token}'")
+if token not in self._env:
+    raise ParserError(f"Semantic Error: Undefined variable '{z}'")
 ```
+Program akan berhenti dan melempar `ParserError`. Ini adalah contoh *undeclared variable error* — secara sintaks valid, tapi secara semantik salah karena tidak ada nilai yang bisa dikaitkan.
 
-Jika `z` tidak ada di `symbol_table`, maka akan muncul:
+**3. Mengapa instruksi `a ^ 2` harus muncul lebih dulu dari `+` di TAC?**
 
+Karena TAC dihasilkan secara *post-order traversal* pada AST — anak-anak dievaluasi sebelum induknya. Untuk ekspresi `a ^ 2 + b * c`, AST-nya menempatkan `+` sebagai root, dengan `a^2` dan `b*c` sebagai subpohon. Sebelum bisa menghasilkan `t3 = t1 + t2`, kompiler harus tahu nilai `t1` (hasil `a^2`) dan `t2` (hasil `b*c`) terlebih dahulu. Urutan TAC yang benar:
 ```
-Error: Semantic Error: Undefined variable 'z'
+t1 = a ^ 2
+t2 = b * c
+t3 = t1 + t2
 ```
-
-Ini adalah contoh **Semantic Error** — kode sintaksnya benar, tapi maknanya tidak valid karena variabel belum dideklarasikan.
-
----
-
-# 3. Mengapa instruksi `a ^ 2` harus muncul sebelum `+` di TAC?
-
-Karena fungsi `generate_tac()` bekerja secara **rekursif post-order** (kiri → kanan → root):
-
-1. Untuk node `+`, fungsi pertama memanggil `generate_tac(node.left)` → yaitu node `a ^ 2`
-2. Baru kemudian `generate_tac(node.right)` → yaitu node `b * c`
-3. Setelah keduanya selesai, barulah instruksi `t3 = t1 + t2` dihasilkan
-
-Ini sesuai prinsip TAC: **setiap operan harus sudah dihitung sebelum digunakan**. Komputer tidak bisa menjalankan `t3 = t1 + t2` jika `t1` belum diketahui nilainya.
