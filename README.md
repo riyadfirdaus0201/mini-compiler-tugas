@@ -20,57 +20,51 @@ t3 = t1 + t2
 ```
 
 ---
-# 1. Mengapa `power()` harus dipanggil di dalam `term()`, bukan sebaliknya?
+## 1. Mengapa fungsi power() harus dipanggil di dalam term(), bukan sebaliknya?
+Karena operator precedence (tingkat prioritas operator). Dalam hirarki matematika:
 
-Ini berkaitan langsung dengan **Operator Precedence (Hierarki Operator)**.
+Pangkat (^) memiliki precedence lebih tinggi daripada perkalian (*) dan pembagian (/)
 
-Dalam matematika, urutan prioritas dari terendah ke tertinggi adalah:
+Perkalian/bagian memiliki precedence lebih tinggi daripada penjumlahan/pengurangan
 
-```
-+ dan -   (paling rendah)
-* dan /
-^         (paling tinggi)
-( )  dan  angka/variabel
-```
+Dengan memanggil power() di dalam term(), maka:
 
-Struktur fungsi dalam parser mencerminkan hierarki ini secara terbalik — fungsi yang menangani prioritas lebih rendah memanggil fungsi yang menangani prioritas lebih tinggi:
+term() akan memproses operator * dan /
 
-```
-expr()   → memanggil → term()
-term()   → memanggil → power()
-power()  → memanggil → factor()
-```
+Sebelum memproses * atau /, term() terlebih dahulu memanggil power() yang memproses ^
 
-Jika `term()` tidak memanggil `power()` melainkan sebaliknya, maka ekspresi seperti `a ^ 2 * 3` akan diparse sebagai `a ^ (2 * 3)` — salah. Dengan struktur yang benar, parser akan menghasilkan `(a ^ 2) * 3` sesuai aturan matematika.
+Akibatnya, ekspresi seperti a ^ 2 * b akan diparsing sebagai (a ^ 2) * b, bukan a ^ (2 * b)
 
----
+Jika sebaliknya (term() dipanggil di dalam power()), maka hierarki precedence akan terbalik dan pangkat akan dievaluasi setelah perkalian, yang salah secara matematika.
 
-# 2. Apa yang terjadi jika variabel `z` digunakan tapi tidak ada di `symbol_table`?
+## 2. Apa yang terjadi pada fase Analisis Semantik jika variabel z digunakan tetapi tidak ada di symbol_table?
+Fase analisis semantik akan mendeteksi error dan program akan berhenti dengan pesan error. Pada kode di atas, di method factor():
 
-Pada fase **Analisis Semantik**, fungsi `factor()` mengecek apakah variabel terdaftar di `self._env`:
-
-```python
+python
 elif token and token.isalpha():
     if token not in self._env:
         raise ParserError(f"Semantic Error: Undefined variable '{token}'")
-```
+Ini adalah semantic checking yang memverifikasi keberadaan variabel dalam symbol table sebelum diizinkan digunakan. Tanpa ini, compiler akan menghasilkan kode yang merujuk ke variabel tidak terdefinisi, menyebabkan runtime error.
 
-Jika `z` tidak ada di `symbol_table`, maka akan muncul:
+## 3. Mengapa dalam TAC, instruksi untuk a ^ 2 harus muncul sebelum instruksi untuk +?
+Karena evaluasi expression mengikuti aturan operator precedence dan grammar recursive-descent:
 
-```
-Error: Semantic Error: Undefined variable 'z'
-```
+expr() memanggil term() untuk operand kiri
 
-Ini adalah contoh **Semantic Error** — kode sintaksnya benar, tapi maknanya tidak valid karena variabel belum dideklarasikan.
+term() memanggil power() untuk operand kiri
 
----
+power() mendeteksi ^ dan langsung menghasilkan TAC untuk operasi pangkat
 
-# 3. Mengapa instruksi `a ^ 2` harus muncul sebelum `+` di TAC?
+Barulah expr() memproses operator + setelah term() selesai
 
-Karena fungsi `generate_tac()` bekerja secara **rekursif post-order** (kiri → kanan → root):
+Alur parsing:
 
-1. Untuk node `+`, fungsi pertama memanggil `generate_tac(node.left)` → yaitu node `a ^ 2`
-2. Baru kemudian `generate_tac(node.right)` → yaitu node `b * c`
-3. Setelah keduanya selesai, barulah instruksi `t3 = t1 + t2` dihasilkan
+text
+a ^ 2 + b * c
+→ expr() memanggil term()
+  → term() memanggil power()
+    → power() melihat 'a ^ 2' → generate TAC t1 = a ^ 2
+  → term() melihat '*' → generate TAC t2 = b * c
+→ expr() melihat '+' → generate TAC t3 = t1 + t2
+Ini sesuai dengan post-order traversal AST: anak dievaluasi sebelum induk, sehingga operasi pangkat dan perkalian dievaluasi terlebih dahulu sebelum penjumlahan.
 
-Ini sesuai prinsip TAC: **setiap operan harus sudah dihitung sebelum digunakan**. Komputer tidak bisa menjalankan `t3 = t1 + t2` jika `t1` belum diketahui nilainya.
